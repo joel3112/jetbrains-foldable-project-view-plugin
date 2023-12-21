@@ -1,1 +1,1 @@
-rootProject.name = "Foldable ProjectView"
+rootProject.name = "Foldable Project View"
