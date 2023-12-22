@@ -59,16 +59,14 @@ class FoldableTreeStructureProvider(project: Project) : TreeStructureProvider {
             !state.foldingEnabled -> children
             parent !is PsiDirectoryNode -> children
             else -> {
-                val matched = mutableSetOf<AbstractTreeNode<*>>()
                 val rulesSortedAlphabetically = state.rules.sortedBy { it.name }
 
                 rulesSortedAlphabetically.forEach {
                     children.match(it.pattern).run {
-                        val matchedByPattern = first.toSet()
-                        val matchedByIgnore = second.toSet()
+                        val matchedByPattern = this.toSet()
 
                         when {
-                            state.hideAllGroups -> children - matchedByPattern - matchedByIgnore
+                            state.hideAllGroups -> children - matchedByPattern
                             else -> {
                                 children -= matchedByPattern
                                 if (matchedByPattern.isNotEmpty() || !state.hideEmptyGroups) children += FoldableProjectViewNode(
@@ -78,11 +76,26 @@ class FoldableTreeStructureProvider(project: Project) : TreeStructureProvider {
                                     it,
                                     SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, it.foreground)
                                 )
+                                children
+                            }
+                        }
+                    }
+                }
+
+                children
+                    .filter { state.foldIgnoredFiles && (it.fileStatus.id in ignoredStatuses) }
+                    .toMutableList()
+                    .run {
+                        val matchedByIgnore = this.toSet()
+
+                        when {
+                            state.hideAllGroups -> children - matchedByIgnore
+                            else -> {
                                 children -= matchedByIgnore
-                                if (matchedByIgnore.isNotEmpty()) matched += FoldableProjectViewNode(
+                                if (this.isNotEmpty()) children += FoldableProjectViewNode(
                                     project,
                                     viewSettings,
-                                    matchedByIgnore,
+                                    this.toSet(),
                                     Rule(
                                         FoldableProjectViewBundle.message("foldableProjectView.node.byIgnored")
                                     ),
@@ -92,9 +105,8 @@ class FoldableTreeStructureProvider(project: Project) : TreeStructureProvider {
                             }
                         }
                     }
-                }
 
-                children + matched
+                children
             }
         }
     }
@@ -111,7 +123,8 @@ class FoldableTreeStructureProvider(project: Project) : TreeStructureProvider {
                     is PsiFileNode -> true
                     else -> false
                 }
-            }.partition {
+            }
+            .filter {
                 when (it) {
                     is ProjectViewNode -> it.virtualFile?.name ?: it.name
                     else -> it.name
@@ -120,14 +133,13 @@ class FoldableTreeStructureProvider(project: Project) : TreeStructureProvider {
                         .caseSensitive()
                         .split(' ')
                         .any { pattern ->
-                            patternCache?.createPattern(pattern, Syntax.GLOB)?.matcher(name)?.matches() ?: false
+                            patternCache
+                                .createPattern(pattern, Syntax.GLOB)
+                                ?.matcher(name)
+                                ?.matches()
+                                ?: false
                         }
                 }
-            }.apply {
-                return Pair(
-                    first,
-                    second.filter { state.foldIgnoredFiles && (it.fileStatus.id in ignoredStatuses) }.toMutableList()
-                )
             }
 
     private fun String?.caseSensitive() = when {
