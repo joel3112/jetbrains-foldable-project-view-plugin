@@ -19,6 +19,7 @@ import ski.chrzanow.foldableprojectview.FoldableProjectViewBundle
 import ski.chrzanow.foldableprojectview.settings.FoldableProjectSettings
 import ski.chrzanow.foldableprojectview.settings.FoldableProjectSettingsListener
 import ski.chrzanow.foldableprojectview.settings.FoldableProjectState
+import ski.chrzanow.foldableprojectview.settings.Rule
 
 class FoldableTreeStructureProvider(project: Project) : TreeStructureProvider {
 
@@ -58,9 +59,10 @@ class FoldableTreeStructureProvider(project: Project) : TreeStructureProvider {
             !state.foldingEnabled -> children
             parent !is PsiDirectoryNode -> children
             else -> {
-                val matched = mutableSetOf<AbstractTreeNode<*>>();
+                val matched = mutableSetOf<AbstractTreeNode<*>>()
+                val rulesSortedAlphabetically = state.rules.sortedBy { it.name }
 
-                state.rules.forEach {
+                rulesSortedAlphabetically.forEach {
                     children.match(it.pattern).run {
                         val matchedByPattern = first.toSet()
                         val matchedByIgnore = second.toSet()
@@ -73,15 +75,17 @@ class FoldableTreeStructureProvider(project: Project) : TreeStructureProvider {
                                     project,
                                     viewSettings,
                                     matchedByPattern,
-                                    it.name,
-                                    SimpleTextAttributes.REGULAR_ATTRIBUTES
+                                    it,
+                                    SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, it.foreground)
                                 )
                                 children -= matchedByIgnore
-                                if (matchedByIgnore.isNotEmpty()) children += FoldableProjectViewNode(
+                                if (matchedByIgnore.isNotEmpty()) matched += FoldableProjectViewNode(
                                     project,
                                     viewSettings,
                                     matchedByIgnore,
-                                    FoldableProjectViewBundle.message("foldableProjectView.node.byIgnored"),
+                                    Rule(
+                                        FoldableProjectViewBundle.message("foldableProjectView.node.byIgnored")
+                                    ),
                                     SimpleTextAttributes.GRAY_SMALL_ATTRIBUTES
                                 )
                                 children
@@ -90,7 +94,7 @@ class FoldableTreeStructureProvider(project: Project) : TreeStructureProvider {
                     }
                 }
 
-                children
+                children + matched
             }
         }
     }
