@@ -16,11 +16,11 @@ import com.intellij.ui.layout.not
 import com.intellij.util.ui.tree.TreeUtil
 import ski.chrzanow.foldableprojectview.FoldableProjectViewBundle.message
 import ski.chrzanow.foldableprojectview.bindSelected
-import ski.chrzanow.foldableprojectview.bindText
 import ski.chrzanow.foldableprojectview.createPredicate
 import ski.chrzanow.foldableprojectview.projectView.FoldableTreeStructureProvider
 import java.awt.Dimension
 import javax.swing.BorderFactory.createEmptyBorder
+import javax.swing.JComponent
 
 class FoldableProjectViewConfigurable(private val project: Project) : SearchableConfigurable {
 
@@ -29,6 +29,21 @@ class FoldableProjectViewConfigurable(private val project: Project) : Searchable
     private val settingsProperty = propertyGraph.lazyProperty { FoldableProjectSettings().apply { copyFrom(settings) } }
     private val foldingEnabledPredicate = settingsProperty.createPredicate(FoldableProjectSettings::foldingEnabled)
     private val hideAllGroupsPredicate = settingsProperty.createPredicate(FoldableProjectSettings::hideEmptyGroups)
+
+    private val ruleProperty = propertyGraph
+        .lazyProperty<Rule?> { null }
+        .apply {
+            afterChange {
+                ApplicationManager.getApplication().invokeLater {
+                    rulesTable.tableView.updateUI()
+                }
+
+                settingsProperty.setValue(null, FoldableProjectState::rules, settingsProperty.get())
+            }
+        }
+
+    private val rulesTable = FoldableRulesTable(settingsProperty)
+    private val rulesEditor = FoldableRulesEditor(ruleProperty)
 
     private val settingsPanel = panel {
         rowsRange {
@@ -40,9 +55,9 @@ class FoldableProjectViewConfigurable(private val project: Project) : Searchable
             }
 
             row {
-                checkBox(message("foldableProjectView.settings.foldDirectories"))
-                    .bindSelected(settingsProperty, FoldableProjectSettings::foldDirectories)
-                    .comment(message("foldableProjectView.settings.foldDirectories.comment"), -1)
+                checkBox(message("foldableProjectView.settings.matchDirectories"))
+                    .bindSelected(settingsProperty, FoldableProjectSettings::matchDirectories)
+                    .comment(message("foldableProjectView.settings.matchDirectories.comment"), -1)
                     .applyToComponent { setMnemonic('d') }
                     .enabledIf(foldingEnabledPredicate)
             }
@@ -77,28 +92,16 @@ class FoldableProjectViewConfigurable(private val project: Project) : Searchable
             }
 
             row {
-                checkBox(message("foldableProjectView.settings.caseInsensitive"))
-                    .bindSelected(settingsProperty, FoldableProjectSettings::caseInsensitive)
-                    .comment(message("foldableProjectView.settings.caseInsensitive.comment"), -1)
+                checkBox(message("foldableProjectView.settings.caseSensitive"))
+                    .bindSelected(settingsProperty, FoldableProjectSettings::caseSensitive)
+                    .comment(message("foldableProjectView.settings.caseSensitive.comment"), -1)
                     .applyToComponent { setMnemonic('c') }
                     .enabledIf(foldingEnabledPredicate)
             }
         }
-
-        group(message("foldableProjectView.settings.foldingRules")) {
-            row {
-                expandableTextField()
-                    .bindText(settingsProperty, FoldableProjectSettings::patterns)
-                    .comment(message("foldableProjectView.settings.patterns.comment"), -1)
-                    .align(Align.FILL)
-                    .applyToComponent {
-                        // TODO: is placeholder possible?
-                        text = message("foldableProjectView.settings.patterns")
-                    }
-                    .enabledIf(foldingEnabledPredicate)
-            }
-        }
     }
+
+
     private val projectView by lazy {
         object : ProjectViewPane(project) {
             override fun enableDnD() = Unit
@@ -116,15 +119,7 @@ class FoldableProjectViewConfigurable(private val project: Project) : Searchable
         }
     }
 
-    companion object {
-        const val ID = "ski.chrzanow.foldableprojectview.options.FoldableProjectViewConfigurable"
-    }
-
-    override fun getId() = ID
-
-    override fun getDisplayName() = message("foldableProjectView.name")
-
-    override fun createComponent() = OnePixelSplitter(false, .6f, .4f, .6f).apply {
+    private val splitter = OnePixelSplitter(false, .6f, .4f, .6f).apply {
         firstComponent = settingsPanel.apply {
             border = createEmptyBorder(10, 10, 10, 30)
         }
@@ -134,6 +129,41 @@ class FoldableProjectViewConfigurable(private val project: Project) : Searchable
         }
         setHonorComponentsMinimumSize(false)
         TreeUtil.promiseExpand(projectView.tree, 2)
+    }
+
+    private val settingsWithRulesPanel = panel {
+        row {
+            cell(splitter)
+                .align(Align.FILL)
+        }
+        group(message("foldableProjectView.settings.foldingRules")) {
+            row {
+                cell(rulesTable.component)
+                    .align(Align.FILL)
+                    .resizableColumn()
+
+                cell(rulesEditor.createPanel())
+                    .applyIfEnabled()
+
+                with(rulesTable.tableView) {
+                    selectionModel.addListSelectionListener {
+                        ruleProperty.set(selectedObject)
+                    }
+                }
+            }
+        }
+    }
+
+    companion object {
+        const val ID = "ski.chrzanow.foldableprojectview.options.FoldableProjectViewConfigurable"
+    }
+
+    override fun getId() = ID
+
+    override fun getDisplayName() = message("foldableProjectView.name")
+
+    override fun createComponent(): JComponent {
+        return settingsWithRulesPanel
     }
 
     override fun isModified() = settingsProperty.get() != settings

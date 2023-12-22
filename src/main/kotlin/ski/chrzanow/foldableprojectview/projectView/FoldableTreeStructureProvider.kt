@@ -57,32 +57,40 @@ class FoldableTreeStructureProvider(project: Project) : TreeStructureProvider {
         return when {
             !state.foldingEnabled -> children
             parent !is PsiDirectoryNode -> children
-            else -> children.match().run {
-                val matchedByPattern = first.toSet()
-                val matchedByIgnore = second.toSet()
+            else -> {
+                val matched = mutableSetOf<AbstractTreeNode<*>>();
 
-                when {
-                    state.hideAllGroups -> children - matchedByPattern - matchedByIgnore
-                    else -> {
-                        children -= matchedByPattern
-                        if (matchedByPattern.isNotEmpty() || !state.hideEmptyGroups) children += FoldableProjectViewNode(
-                            project,
-                            viewSettings,
-                            matchedByPattern,
-                            FoldableProjectViewBundle.message("foldableProjectView.node.byPattern"),
-                            SimpleTextAttributes.REGULAR_ATTRIBUTES
-                        )
-                        children -= matchedByIgnore
-                        if (matchedByIgnore.isNotEmpty()) children += FoldableProjectViewNode(
-                            project,
-                            viewSettings,
-                            matchedByIgnore,
-                            FoldableProjectViewBundle.message("foldableProjectView.node.byIgnored"),
-                            SimpleTextAttributes.GRAY_SMALL_ATTRIBUTES
-                        )
-                        children
+                state.rules.forEach {
+                    children.match(it.pattern).run {
+                        val matchedByPattern = first.toSet()
+                        val matchedByIgnore = second.toSet()
+
+                        when {
+                            state.hideAllGroups -> children - matchedByPattern - matchedByIgnore
+                            else -> {
+                                children -= matchedByPattern
+                                if (matchedByPattern.isNotEmpty() || !state.hideEmptyGroups) children += FoldableProjectViewNode(
+                                    project,
+                                    viewSettings,
+                                    matchedByPattern,
+                                    it.name,
+                                    SimpleTextAttributes.REGULAR_ATTRIBUTES
+                                )
+                                children -= matchedByIgnore
+                                if (matchedByIgnore.isNotEmpty()) children += FoldableProjectViewNode(
+                                    project,
+                                    viewSettings,
+                                    matchedByIgnore,
+                                    FoldableProjectViewBundle.message("foldableProjectView.node.byIgnored"),
+                                    SimpleTextAttributes.GRAY_SMALL_ATTRIBUTES
+                                )
+                                children
+                            }
+                        }
                     }
                 }
+
+                children
             }
         }
     }
@@ -91,11 +99,11 @@ class FoldableTreeStructureProvider(project: Project) : TreeStructureProvider {
         previewState = state
     }
 
-    private fun MutableCollection<AbstractTreeNode<*>>.match() =
+    private fun MutableCollection<AbstractTreeNode<*>>.match(patterns: String) =
         this
             .filter {
                 when (it) {
-                    is PsiDirectoryNode -> state.foldDirectories
+                    is PsiDirectoryNode -> state.matchDirectories
                     is PsiFileNode -> true
                     else -> false
                 }
@@ -103,9 +111,9 @@ class FoldableTreeStructureProvider(project: Project) : TreeStructureProvider {
                 when (it) {
                     is ProjectViewNode -> it.virtualFile?.name ?: it.name
                     else -> it.name
-                }.caseInsensitive().let { name ->
-                    state.patterns
-                        .caseInsensitive()
+                }.caseSensitive().let { name ->
+                    patterns
+                        .caseSensitive()
                         .split(' ')
                         .any { pattern ->
                             patternCache?.createPattern(pattern, Syntax.GLOB)?.matcher(name)?.matches() ?: false
@@ -118,10 +126,10 @@ class FoldableTreeStructureProvider(project: Project) : TreeStructureProvider {
                 )
             }
 
-    private fun String?.caseInsensitive() = when {
+    private fun String?.caseSensitive() = when {
         this == null -> ""
-        state.caseInsensitive -> lowercase()
-        else -> this
+        state.caseSensitive -> this
+        else -> lowercase()
     }
 
     private fun refreshProjectView() = projectView.currentProjectViewPane?.updateFromRoot(true)
